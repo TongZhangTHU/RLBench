@@ -17,15 +17,16 @@ from rlbench.backend import utils
 from rlbench.backend.const import *
 import numpy as np
 
+os.environ["DISPLAY"] = ":0.0"
 from absl import app
 from absl import flags
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('save_path',
-                    '/tmp/rlbench_data/',
+                    '/home/zhangtong/rlbench_data_peract_variation0/test',
                     'Where to save the demos.')
-flags.DEFINE_list('tasks', [],
+flags.DEFINE_list('tasks', ['close_jar', 'meat_off_grill', 'open_drawer', 'push_buttons', 'reach_and_drag', 'slide_block_to_color_target', 'take_lid_off_saucepan', 'turn_tap'],
                   'The tasks to collect. If empty, all tasks are collected.')
 flags.DEFINE_list('image_size', [128, 128],
                   'The size of the images tp save.')
@@ -34,11 +35,11 @@ flags.DEFINE_enum('renderer',  'opengl3', ['opengl', 'opengl3'],
                   'but is faster.')
 flags.DEFINE_integer('processes', 1,
                      'The number of parallel processes during collection.')
-flags.DEFINE_integer('episodes_per_task', 10,
+flags.DEFINE_integer('episodes_per_task', 25,
                      'The number of episodes to collect per task.')
-flags.DEFINE_integer('variations', -1,
+flags.DEFINE_integer('variations', 1,
                      'Number of variations to collect per task. -1 for all.')
-flags.DEFINE_bool('all_variations', True,
+flags.DEFINE_bool('all_variations', False,
                   'Include all variations when sampling epsiodes')
 
 
@@ -290,7 +291,7 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks):
                     break
                 episode_path = os.path.join(episodes_path, EPISODE_FOLDER % ex_idx)
                 with file_lock:
-                    save_demo(demo, episode_path)
+                    save_demo(demo, episode_path, my_variation_count)
                 break
             if abort_variation:
                 break
