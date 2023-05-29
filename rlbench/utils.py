@@ -39,7 +39,7 @@ def name_to_task_class(task_file: str):
 
 
 def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
-                     variation_number: int, task_name: str,
+                     variation_number: int or List[int], task_name: str,
                      obs_config: ObservationConfig,
                      random_selection: bool = True,
                      from_episode_number: int = 0) -> List[Demo]:
@@ -84,11 +84,13 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
         if variation_number == -1:
             with open(join(example_path, VARIATION_NUMBER), 'rb') as f:
                 obs.variation_number = pickle.load(f)
+            # language description
+            episode_descriptions_f = join(example_path, VARIATION_DESCRIPTIONS)
         else:
             obs.variation_number = variation_number
+            # language description
+            episode_descriptions_f = join(task_root, VARIATIONS_FOLDER % variation_number, VARIATION_DESCRIPTIONS)
 
-        # language description
-        episode_descriptions_f = join(example_path, VARIATION_DESCRIPTIONS)
         if exists(episode_descriptions_f):
             with open(episode_descriptions_f, 'rb') as f:
                 descriptions = pickle.load(f)
@@ -119,6 +121,7 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                 listdir(oh_depth_f)) == len(listdir(wrist_rgb_f)) == len(
                 listdir(wrist_depth_f)) == len(listdir(front_rgb_f)) == len(
                 listdir(front_depth_f))):
+            print(example)
             raise RuntimeError('Broken dataset assumption')
 
         for i in range(num_steps):
