@@ -13,7 +13,9 @@ from rlbench.backend.const import *
 from rlbench.backend.utils import image_to_float_array, rgb_handles_to_mask
 from rlbench.demo import Demo
 from rlbench.observation_config import ObservationConfig
-
+from omegaconf import DictConfig
+import torchvision.transforms as T
+import copy
 
 class InvalidTaskName(Exception):
     pass
@@ -42,7 +44,10 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                      variation_number: int or List[int], task_name: str,
                      obs_config: ObservationConfig,
                      random_selection: bool = True,
-                     from_episode_number: int = 0) -> List[Demo]:
+                     from_episode_number: int = 0,
+                     simulation: bool = True,
+                     real_robot_cfg: DictConfig = None,
+                     ) -> List[Demo]:
 
     task_root = join(dataset_root, task_name)
     if not exists(task_root):
@@ -114,15 +119,22 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
         front_mask_f = join(example_path, FRONT_MASK_FOLDER)
 
         num_steps = len(obs)
-
-        if not (num_steps == len(listdir(l_sh_rgb_f)) == len(
-                listdir(l_sh_depth_f)) == len(listdir(r_sh_rgb_f)) == len(
-                listdir(r_sh_depth_f)) == len(listdir(oh_rgb_f)) == len(
-                listdir(oh_depth_f)) == len(listdir(wrist_rgb_f)) == len(
-                listdir(wrist_depth_f)) == len(listdir(front_rgb_f)) == len(
+        if simulation:
+            # Simulation
+            if not (num_steps == len(listdir(l_sh_rgb_f)) == len(
+                    listdir(l_sh_depth_f)) == len(listdir(r_sh_rgb_f)) == len(
+                    listdir(r_sh_depth_f)) == len(listdir(oh_rgb_f)) == len(
+                    listdir(oh_depth_f)) == len(listdir(wrist_rgb_f)) == len(
+                    listdir(wrist_depth_f)) == len(listdir(front_rgb_f)) == len(
+                    listdir(front_depth_f))):
+                print(example)
+                raise RuntimeError('Broken dataset assumption')
+        else:
+            # Real robot
+            if not (num_steps == len(listdir(front_rgb_f)) == len(
                 listdir(front_depth_f))):
-            print(example)
-            raise RuntimeError('Broken dataset assumption')
+                print(example)
+                raise RuntimeError('Broken dataset assumption')
 
         for i in range(num_steps):
             # descriptions
@@ -201,10 +213,17 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                             Image.open(obs[i].wrist_rgb),
                             obs_config.wrist_camera.image_size))
                 if obs_config.front_camera.rgb:
-                    obs[i].front_rgb = np.array(
-                        _resize_if_needed(
-                            Image.open(obs[i].front_rgb),
-                            obs_config.front_camera.image_size))
+                    if simulation:
+                        obs[i].front_rgb = np.array(
+                            _resize_if_needed(
+                                Image.open(obs[i].front_rgb),
+                                obs_config.front_camera.image_size))
+                    else:
+                        image, _, _ = _crop_and_resize_nearest(
+                                Image.open(obs[i].front_rgb),
+                                obs_config.front_camera.image_size,
+                                real_robot_cfg.crop)
+                        obs[i].front_rgb = np.array(image)
 
                 if obs_config.left_shoulder_camera.depth or obs_config.left_shoulder_camera.point_cloud:
                     l_sh_depth = image_to_float_array(
@@ -267,14 +286,25 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                         obs[i].wrist_depth = None
 
                 if obs_config.front_camera.depth or obs_config.front_camera.point_cloud:
-                    front_depth = image_to_float_array(
-                        _resize_if_needed(
-                            Image.open(obs[i].front_depth),
-                            obs_config.front_camera.image_size),
-                        DEPTH_SCALE)
-                    near = obs[i].misc['front_camera_near']
-                    far = obs[i].misc['front_camera_far']
-                    front_depth_m = near + front_depth * (far - near)
+                    if simulation:
+                        front_depth = image_to_float_array(
+                            _resize_if_needed(
+                                Image.open(obs[i].front_depth),
+                                obs_config.front_camera.image_size),
+                            DEPTH_SCALE)
+                        near = obs[i].misc['front_camera_near']
+                        far = obs[i].misc['front_camera_far']
+                        front_depth_m = near + front_depth * (far - near)
+                    else:
+                        image, x_scale, y_scale = _crop_and_resize_nearest(
+                                Image.open(obs[i].front_depth),
+                                obs_config.front_camera.image_size,
+                                real_robot_cfg.crop)
+                        REAL_ROBOT_DEPTH_SCALE = 1000
+                        front_depth = image_to_float_array(
+                            image,
+                            REAL_ROBOT_DEPTH_SCALE)
+                        front_depth_m = front_depth
                     if obs_config.front_camera.depth:
                         d = front_depth_m if obs_config.front_camera.depth_in_meters else front_depth
                         obs[i].front_depth = obs_config.front_camera.depth_noise.apply(d)
@@ -302,10 +332,34 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                         obs[i].misc['wrist_camera_extrinsics'],
                         obs[i].misc['wrist_camera_intrinsics'])
                 if obs_config.front_camera.point_cloud:
-                    obs[i].front_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
-                        front_depth_m,
-                        obs[i].misc['front_camera_extrinsics'],
-                        obs[i].misc['front_camera_intrinsics'])
+                    if simulation:
+                        obs[i].front_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
+                            front_depth_m,
+                            obs[i].misc['front_camera_extrinsics'],
+                            obs[i].misc['front_camera_intrinsics'])
+                    else:
+                        front_camera_extrinsics = copy.deepcopy(obs[i].misc['front_camera_extrinsics'])
+                        front_camera_intrinsics = copy.deepcopy(obs[i].misc['front_camera_intrinsics'])
+                        # apply extrinsics offest
+                        # print('orginal extrinsics:', front_camera_extrinsics)
+                        front_camera_extrinsics[0, 3] += real_robot_cfg.x_offset
+                        front_camera_extrinsics[1, 3] += real_robot_cfg.y_offset
+                        front_camera_extrinsics[2, 3] += real_robot_cfg.z_offset
+                        # print('modified extrinsics:', front_camera_extrinsics)
+                        # apply intrinsics modifications for crop and resize
+                        # print('orginal intrinsics:', front_camera_intrinsics)
+                        if real_robot_cfg.crop.apply:
+                            front_camera_intrinsics[0,2] -=  real_robot_cfg.crop.left
+                            front_camera_intrinsics[1,2] -=  real_robot_cfg.crop.top
+                        front_camera_intrinsics[0,0] *= x_scale # fx
+                        front_camera_intrinsics[1,1] *= y_scale # fy
+                        front_camera_intrinsics[0,2] *= x_scale # cx
+                        front_camera_intrinsics[1,2] *= y_scale # cy
+                        # print('modified intrinsics:', front_camera_intrinsics)
+                        obs[i].front_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
+                            front_depth_m,
+                            front_camera_extrinsics,
+                            front_camera_intrinsics)
 
                 # Masks are stored as coded RGB images.
                 # Here we transform them into 1 channel handles.
@@ -343,3 +397,13 @@ def _resize_if_needed(image, size):
     if image.size[0] != size[0] or image.size[1] != size[1]:
         image = image.resize(size)
     return image
+
+def _crop_and_resize_nearest(image, size, crop_cfg):
+    if crop_cfg.apply:
+        image = T.functional.crop(image, crop_cfg.top, crop_cfg.left, crop_cfg.height, crop_cfg.width)  
+    crop_size = image.size
+    if image.size[0] != size[0] or image.size[1] != size[1]:
+        image = image.resize(size, resample=Image.NEAREST)
+    x_scale = size[0] / crop_size[0]
+    y_scale = size[1] / crop_size[1]
+    return image, x_scale, y_scale
