@@ -1,4 +1,5 @@
 import os
+os.environ["DISPLAY"] = ":0.0"
 from typing import Type
 import numpy as np
 from absl import app
@@ -34,8 +35,13 @@ flags.DEFINE_string(
     'Where to locate textures if using domain randomization.')
 flags.DEFINE_boolean('headless', True, 'Run in headless mode.')
 flags.DEFINE_list(
-    'camera_resolution', [1280, 720], 'The camera resolution')
-
+    'camera_resolution', [720, 720], 'The camera resolution')
+flags.DEFINE_float(
+    'rotate_speed', 0.005, 'The camera rotation speed in radians per step')
+flags.DEFINE_float(
+    'init_rotation', 0, 'The initial camera rotation in degrees')
+flags.DEFINE_integer(
+    'variation_number', 0, 'The variation number')
 
 class CameraMotion(object):
     def __init__(self, cam: VisionSensor):
@@ -66,12 +72,13 @@ class CircleCameraMotion(CameraMotion):
 
 class TaskRecorder(object):
 
-    def __init__(self, env: Environment, cam_motion: CameraMotion, fps=30):
+    def __init__(self, env: Environment, cam_motion: CameraMotion, fps=30, variation_number=0):
         self._env = env
         self._cam_motion = cam_motion
         self._fps = fps
         self._snaps = []
         self._current_snaps = []
+        self._variation_number = variation_number
 
     def take_snap(self, obs: Observation):
         self._cam_motion.step()
@@ -80,6 +87,7 @@ class TaskRecorder(object):
 
     def record_task(self, task: Type[Task]):
         task = self._env.get_task(task)
+        task.set_variation(self._variation_number)
         self._cam_motion.save_pose()
         while True:
             try:
@@ -133,8 +141,9 @@ def main(argv):
     cam.set_pose(cam_placeholder.get_pose())
     cam.set_parent(cam_placeholder)
 
-    cam_motion = CircleCameraMotion(cam, Dummy('cam_cinematic_base'), 0.005)
-    tr = TaskRecorder(env, cam_motion, fps=30)
+    # cam_motion = CircleCameraMotion(cam, Dummy('cam_cinematic_base'), 0.005)
+    cam_motion = CircleCameraMotion(cam, Dummy('cam_cinematic_base'), FLAGS.rotate_speed, init_rotation=np.deg2rad(FLAGS.init_rotation))
+    tr = TaskRecorder(env, cam_motion, fps=30, variation_number=FLAGS.variation_number)
 
     if len(FLAGS.tasks) > 0:
         task_names = FLAGS.tasks
@@ -147,7 +156,7 @@ def main(argv):
     for i, (name, cls) in enumerate(zip(task_names, task_classes)):
         good = tr.record_task(cls)
         if FLAGS.individual and good:
-            tr.save(os.path.join(FLAGS.save_dir, '%s.avi' % name))
+            tr.save(os.path.join(FLAGS.save_dir, '%s-v%d.mp4' % (name, FLAGS.variation_number)))
 
     if not FLAGS.individual:
         tr.save(os.path.join(FLAGS.save_dir, 'recorded_tasks.mp4'))
