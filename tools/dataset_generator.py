@@ -24,9 +24,10 @@ from absl import flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('save_path',
-                    '/home/zhangtong/rlbench_data_peract_variation0/test',
+                    '/home/zhangtong/data/rlbench_data_peract_variation0/test',
                     'Where to save the demos.')
-flags.DEFINE_list('tasks', ['close_jar', 'meat_off_grill', 'open_drawer', 'push_buttons', 'reach_and_drag', 'slide_block_to_color_target', 'take_lid_off_saucepan', 'turn_tap'],
+#flags.DEFINE_list('tasks', ['place_shape_in_shape_sorter', 'close_jar', 'meat_off_grill', 'open_drawer', 'push_buttons', 'reach_and_drag', 'slide_block_to_color_target', 'take_lid_off_saucepan', 'turn_tap'],
+flags.DEFINE_list('tasks', ['sweep_to_dustpan_of_size', 'put_item_in_drawer', 'put_money_in_safe', 'light_bulb_in'],
                   'The tasks to collect. If empty, all tasks are collected.')
 flags.DEFINE_list('image_size', [128, 128],
                   'The size of the images tp save.')
@@ -41,6 +42,8 @@ flags.DEFINE_integer('variations', 1,
                      'Number of variations to collect per task. -1 for all.')
 flags.DEFINE_bool('all_variations', False,
                   'Include all variations when sampling epsiodes')
+flags.DEFINE_bool('record_videos', False,
+                  'Record videos of the episodes.')
 
 
 def check_and_make(dir):
@@ -211,12 +214,38 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks):
         obs_config.wrist_camera.render_mode = RenderMode.OPENGL
         obs_config.front_camera.render_mode = RenderMode.OPENGL
 
+    class cinematic_recorder_cfg:
+
+        def __init__(self):
+            self.enabled = FLAGS.record_videos
+            self.camera_resolution = [1280, 720]
+            self.fps = 30
+            self.rotate_speed = 0.005
+            self.init_rotation_degree = 180
+            
+    rec_cfg = cinematic_recorder_cfg()
+
     rlbench_env = Environment(
         action_mode=MoveArmThenGripper(JointVelocity(), Discrete()),
         obs_config=obs_config,
         headless=True)
     rlbench_env.launch()
 
+    # initialize cinematic recorder if specified
+    if rec_cfg.enabled:
+        from pyrep.objects.dummy import Dummy
+        from pyrep.objects.vision_sensor import VisionSensor
+        from yarr.utils.video_utils import CircleCameraMotion, TaskRecorderForDataGenerate
+        # from cinematic_recorder import CircleCameraMotion, TaskRecorder
+        cam_placeholder = Dummy('cam_cinematic_placeholder')
+        cam = VisionSensor.create(rec_cfg.camera_resolution)
+        cam.set_pose(cam_placeholder.get_pose())
+        cam.set_parent(cam_placeholder)
+
+        cam_motion = CircleCameraMotion(cam, Dummy('cam_cinematic_base'), rec_cfg.rotate_speed, init_rotation=np.deg2rad(rec_cfg.init_rotation_degree))
+        tr = TaskRecorderForDataGenerate(rlbench_env, cam_motion, fps=rec_cfg.fps)
+
+        # rlbench_env._action_mode.arm_action_mode.set_callable_each_step(tr.take_snap)
     task_env = None
 
     tasks_with_problems = results[i] = ''
@@ -265,6 +294,8 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks):
         check_and_make(episodes_path)
 
         abort_variation = False
+        # if rec_cfg.enabled:
+        #     tr._cam_motion.save_pose()
         for ex_idx in range(FLAGS.episodes_per_task):
             print('Process', i, '// Task:', task_env.get_name(),
                   '// Variation:', my_variation_count, '// Demo:', ex_idx)
@@ -272,11 +303,30 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks):
             while attempts > 0:
                 try:
                     # TODO: for now we do the explicit looping.
-                    demo, = task_env.get_demos(
-                        amount=1,
-                        live_demos=True)
+                    if rec_cfg.enabled:
+                        tr._cam_motion.save_pose()
+                        demo, = task_env.get_demos(
+                            amount=1,
+                            live_demos=True, 
+                            callable_each_step=tr.take_snap,)
+                            # max_attempts=1)
+                    else:
+                        demo, = task_env.get_demos(
+                            amount=1,
+                            live_demos=True)
+                    
+                    # if rec_cfg.enabled:
+                    #     # success = reward > 0.99
+                    #     record_file = os.path.join(variation_path, 'videos',
+                    #                 '%s_v%s_e%s.mp4' % (task_env.get_name(), my_variation_count, ex_idx))
+                    #     lang_goal = descriptions[0]
+                    #     tr.save(record_file, lang_goal, 1.0)
+                    #     tr._cam_motion.restore_pose()
                 except Exception as e:
                     attempts -= 1
+                    if rec_cfg.enabled:
+                        tr._cam_motion.restore_pose()
+                        tr._current_snaps = []
                     if attempts > 0:
                         continue
                     problem = (
@@ -292,6 +342,13 @@ def run(i, lock, task_index, variation_count, results, file_lock, tasks):
                 episode_path = os.path.join(episodes_path, EPISODE_FOLDER % ex_idx)
                 with file_lock:
                     save_demo(demo, episode_path, my_variation_count)
+                    if rec_cfg.enabled:
+                        tr._snaps.extend(tr._current_snaps)
+                        tr._current_snaps = []
+                        record_file = os.path.join(variation_path, 'videos',
+                                    '%s_v%s_e%s.mp4' % (task_env.get_name(), my_variation_count, ex_idx))
+                        tr.save(record_file)
+                        tr._cam_motion.restore_pose()
                 break
             if abort_variation:
                 break
