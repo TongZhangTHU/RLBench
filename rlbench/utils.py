@@ -50,6 +50,13 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                      simulation: bool = True,
                      real_robot_cfg: DictConfig = None,
                      ) -> List[Demo]:
+    if not simulation:
+        # current only support front camera
+        assert not obs_config.left_shoulder_camera.rgb
+        assert not obs_config.right_shoulder_camera.rgb
+        assert not obs_config.overhead_camera.rgb
+        assert not obs_config.wrist_camera.rgb
+        
 
     task_root = join(dataset_root, task_name)
     if not exists(task_root):
