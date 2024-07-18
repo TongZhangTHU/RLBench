@@ -346,25 +346,7 @@ def get_stored_demos(amount: int, image_paths: bool, dataset_root: str,
                             obs[i].misc['front_camera_extrinsics'],
                             obs[i].misc['front_camera_intrinsics'])
                     else:
-                        # front_camera_extrinsics = copy.deepcopy(obs[i].misc['front_camera_extrinsics'])
-                        # front_camera_intrinsics = copy.deepcopy(obs[i].misc['front_camera_intrinsics'])
-                        # apply extrinsics offest
-                        # print('orginal extrinsics:', front_camera_extrinsics)
-                        # front_camera_extrinsics[0, 3] += real_robot_cfg.x_offset
-                        # front_camera_extrinsics[1, 3] += real_robot_cfg.y_offset
-                        # front_camera_extrinsics[2, 3] += real_robot_cfg.z_offset
-                        # print('modified extrinsics:', front_camera_extrinsics)
-                        # apply intrinsics modifications for crop and resize
-                        # print('orginal intrinsics:', front_camera_intrinsics)
-                        # if real_robot_cfg.crop.apply:
-                        #     front_camera_intrinsics[0,2] -=  real_robot_cfg.crop.left
-                        #     front_camera_intrinsics[1,2] -=  real_robot_cfg.crop.top
-                        # front_camera_intrinsics[0,0] *= x_scale # fx
-                        # front_camera_intrinsics[1,1] *= y_scale # fy
-                        # front_camera_intrinsics[0,2] *= x_scale # cx
-                        # front_camera_intrinsics[1,2] *= y_scale # cy
-                        # print('modified intrinsics:', front_camera_intrinsics)
-                        front_camera_extrinsics = _extrinsics_modification(obs[i].misc['front_camera_extrinsics'], real_robot_cfg)
+                        front_camera_extrinsics = copy.deepcopy(obs[i].misc['front_camera_extrinsics'])
                         front_camera_intrinsics = _intrinsics_modification(obs[i].misc['front_camera_intrinsics'], real_robot_cfg, x_scale, y_scale)
                         obs[i].front_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
                             front_depth_m,
@@ -418,18 +400,6 @@ def _crop_and_resize_nearest(image, size, crop_cfg):
     y_scale = size[1] / crop_size[1]
     return image, x_scale, y_scale
 
-
-def _extrinsics_modification(camera_extrinsics, real_robot_cfg):
-
-    modified_camera_extrinsics = copy.deepcopy(camera_extrinsics)
-    modified_camera_extrinsics[0, 3] += real_robot_cfg.x_offset
-    modified_camera_extrinsics[1, 3] += real_robot_cfg.y_offset
-    modified_camera_extrinsics[2, 3] += real_robot_cfg.z_offset
-    # print('orginal extrinsics:', camera_extrinsics)
-    # print('modified extrinsics:', modified_camera_extrinsics)
-
-    return modified_camera_extrinsics
-
 def _intrinsics_modification(camera_intrinsics, real_robot_cfg, x_scale, y_scale):
 
     modified_camera_intrinsics = copy.deepcopy(camera_intrinsics)
@@ -440,7 +410,5 @@ def _intrinsics_modification(camera_intrinsics, real_robot_cfg, x_scale, y_scale
     modified_camera_intrinsics[1,1] *= y_scale # fy
     modified_camera_intrinsics[0,2] *= x_scale # cx
     modified_camera_intrinsics[1,2] *= y_scale # cy
-    # print('orginal intrinsics:', camera_intrinsics)
-    # print('modified intrinsics:', modified_camera_intrinsics)
 
     return modified_camera_intrinsics
