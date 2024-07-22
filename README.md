@@ -2,7 +2,11 @@
 
 ![task grid image missing](readme_files/task_grid.png)
 
-## Modifications
+## SGR's Modifications (TODO)
+- [ ] merge and summarize SGR's modifications
+
+
+## PerAct's Modifications
  This is my fork of RLBench. Modifications include:
 - 6 new tasks, bug fixes, and extensions of existing tasks. See Appendix A in the [paper](https://peract.github.io/) for details.
 - Data generation also records if `ignore_collisions` was used with a waypoint for motion-planning. 
