@@ -24,7 +24,7 @@ from absl import flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('save_path',
-                    '/home/zhangtong/data/rlbench_data_peract_variation0/test',
+                    'rlbench_data/test',
                     'Where to save the demos.')
 #flags.DEFINE_list('tasks', ['place_shape_in_shape_sorter', 'close_jar', 'meat_off_grill', 'open_drawer', 'push_buttons', 'reach_and_drag', 'slide_block_to_color_target', 'take_lid_off_saucepan', 'turn_tap'],
 flags.DEFINE_list('tasks', ['sweep_to_dustpan_of_size', 'put_item_in_drawer', 'put_money_in_safe', 'light_bulb_in'],
